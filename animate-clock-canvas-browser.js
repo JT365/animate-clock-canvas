@@ -107,23 +107,28 @@ class AnimateClockCanvas {
      * @param preset            0                  预制的几种表盘类型
      */
     constructor(
-        theme, pointerType, numberType, isSkipHourLabel,
-        isZoomSecond, isShowDetailInfo = '1', isShowWeekDate = '1' ,
-        isShowShadow = '1', preset = '0'
+        canvas, theme, pointerType, numberType, isSkipHourLabel,
+        isZoomSecond, isShowDetailInfo = true, isShowWeekDate = true ,
+        isShowShadow = true, preset = '0', timezone = 'Asia/Shanghai'
     ) {
         this.isPlayConstantly = true // 是否一直 draw
 
         this.theme = theme || 'white'
         this.numberType = (numberType || 'ALB').toUpperCase()
         this.pointerType = pointerType || 'rounded'             // 指针类型
-        this.isSkipHourLabel = isSkipHourLabel === '1'          // 分钟数是否跳过小时数显示
-        this.isZoomSecond = isZoomSecond === '1'                // 是否放大实时秒数
-        this.isShowDetailInfo = isShowDetailInfo === '0'        // 是否显示所有参数值
-        this.isShowWeekDate = isShowWeekDate === '1'            // 是否显示日期、星期
-        this.isShowShadow = isShowShadow === '1'                // 是否显示指针阴影
+        this.isSkipHourLabel = isSkipHourLabel           // 分钟数是否跳过小时数显示
+        this.isZoomSecond = isZoomSecond                // 是否放大实时秒数
+        this.isShowDetailInfo = isShowDetailInfo         // 是否显示所有参数值
+        this.isShowWeekDate = isShowWeekDate            // 是否显示日期、星期
+        this.isShowShadow = isShowShadow                // 是否显示指针阴影
         this.preset = preset || '0'                // 是否显示指针阴影
 
         this.panelRadius = 600 // 基尺寸
+        this.canvas = canvas;
+
+        // 计算该时区相对于 UTC 的偏移（分钟） 
+        this.timezone = timezone;
+        this.offsetMinutes = this.getTimezoneOffsetMinutes(timezone);
 
         this.configFrame = {
             center: {
@@ -144,13 +149,13 @@ class AnimateClockCanvas {
         this.rotateAngleSecond = 0
 
         this.init()
+    }
 
-        window.onresize = () => {
-            this.refreshSizes()
-
-            let clockLayer = document.getElementById('clockLayer')
-            this.updateFrameAttribute(clockLayer)
-        }
+    getTimezoneOffsetMinutes(tz) {
+      const now = new Date(); 
+      const locale = now.toLocaleString("en-US", { timeZone: tz }); 
+      const tzDate = new Date(locale); 
+      return (tzDate - now) / 60000; 
     }
 
     updateFrameAttribute(clockLayer){
@@ -168,8 +173,8 @@ class AnimateClockCanvas {
 
     // 更新尺寸数据
     refreshSizes(){
-        this.configFrame.height = innerHeight * 2
-        this.configFrame.width = innerWidth * 2
+        this.configFrame.height = this.canvas.height 
+        this.configFrame.width = this.canvas.width 
         this.configFrame.center = {
             x: this.configFrame.width/2,
             y: this.configFrame.height/2
@@ -194,23 +199,34 @@ class AnimateClockCanvas {
         }
     }
 
+    stop() { 
+        this.isPlayConstantly = false; 
+    }
+
+    start() { 
+        if (!this.isPlayConstantly) { this.isPlayConstantly = true; this.draw(); } 
+    }
+
     init(){
         this.refreshSizes()
 
-        let clockLayer = document.createElement("canvas")
-        this.updateFrameAttribute(clockLayer)
-        document.documentElement.append(clockLayer)
         this.timeLine =  0
         this.draw()
     }
 
     draw() {
+       const now = new Date();
+       const tzTime = new Date(now.getTime() + this.offsetMinutes * 60000);
+       const hours = tzTime.getHours() 
+       const minutes = tzTime.getMinutes() 
+       const seconds = tzTime.getSeconds() 
+       const ms = tzTime.getMilliseconds()
+
         // 建立自己的时间参考线，消除使用系统时间时导致的切换程序后时间紊乱的情况
         this.timeLine = this.timeLine + 1
 
         // create clock
-        let canvasClock = document.getElementById('clockLayer')
-        let contextClock = canvasClock.getContext('2d')
+        let contextClock = this.canvas.getContext('2d')
         contextClock.clearRect(0, 0, this.configFrame.width, this.configFrame.height)
 
         // 背景，没有 bgColor 的时候，背景就是透明的
@@ -223,27 +239,28 @@ class AnimateClockCanvas {
             contextClock.fillRect(0, 0, this.configFrame.width, this.configFrame.height)
         }
 
+        this.drawBrandLogo(contextClock, this.configFrame.center);
 
         // 表盘
-        this.drawClockPanelSeconds(contextClock, this.configFrame.center)
-        this.drawClockPanelMinutes(contextClock, this.configFrame.center)
-        this.drawClockPanelHour(contextClock, this.configFrame.center)
+        this.drawClockPanelSeconds(contextClock, this.configFrame.center, tzTime)
+        this.drawClockPanelMinutes(contextClock, this.configFrame.center, tzTime)
+        this.drawClockPanelHour(contextClock, this.configFrame.center, tzTime)
 
         // 参考线
         // this.drawRefLines(contextClock, this.configFrame.center)
 
         // 日期、星期
         if (this.isShowWeekDate){
-            this.drawWeekAndDate(contextClock, this.configFrame.center)
+            this.drawWeekAndDate(contextClock, this.configFrame.center, tzTime)
         }
 
         // 指针
-        this.drawPointerHour(contextClock, this.configFrame.center)
-        this.drawPointerMinute(contextClock, this.configFrame.center)
-        this.drawPointerSecond(contextClock, this.configFrame.center)
+        this.drawPointerHour(contextClock, this.configFrame.center, tzTime)
+        this.drawPointerMinute(contextClock, this.configFrame.center, tzTime)
+        this.drawPointerSecond(contextClock, this.configFrame.center, tzTime)
 
         // 中心点
-        this.drawCenter(contextClock, this.configFrame.center)
+        this.drawCenter(contextClock, this.configFrame.center, tzTime)
 
 
         // 左下角显示所有参数值
@@ -276,14 +293,44 @@ class AnimateClockCanvas {
         })
     }
 
+    drawBrandLogo(ctx, center) {
+    ctx.save();
+    
+    // INCREASED SIZE: 0.5x of the Hour labels (usually ~40px)
+    // This makes it visible but not overwhelming.
+    const fontSize = this.configClock.labelFontSizeHour * 0.9; 
+    
+    // STYLE: Using a bolder weight and slightly more letter spacing 
+    // makes it look like a real brand logo.
+    ctx.font = `bold ${fontSize}px Galvji, "Helvetica Neue", Arial, sans-serif`;
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    
+    // COLOR: Match the main dial numbers
+    ctx.fillStyle = THEME[this.theme].colorMain;
+    
+    // POSITION: 12 o'clock area (Between center and top edge)
+    // -0.4 to -0.45 is the "Sweet Spot" for brand placement.
+    const offsetY = -this.configClock.panelRadius * 0.42;
+    
+    // CLEAN STRING: "Asia/Shanghai" -> "SHANGHAI"
+    const brandName = this.timezone.split('/').pop().toUpperCase();
+    
+    // OPTIONAL: Add slight letter spacing by splitting and joining with a space
+    // ctx.fillText(brandName.split('').join(' '), center.x, center.y + offsetY);
+    ctx.fillText(brandName, center.x, center.y + offsetY);
+    
+    ctx.restore();
+    }
+
     // 展示日期、星期
-    drawWeekAndDate(ctx, center){
+    drawWeekAndDate(ctx, center, tzTime){
         ctx.save()
         const fontSize = this.configClock.dateFontSize
         ctx.font = `${fontSize}px Galvji`
         ctx.textBaseline = 'middle'  // 文字纵向居中 绘制
-        const weekString = WEEK_MAP[new Date().getDay()]
-        const dateString = String(new Date().getDate())
+        const weekString = WEEK_MAP[tzTime.getDay()] 
+        const dateString = String(tzTime.getDate())
         // 星期
         ctx.fillStyle = THEME[this.theme].colorPointerSecond
         ctx.fillText(weekString, center.x + this.configClock.panelRadius / 2 ,center.y)
@@ -325,12 +372,12 @@ class AnimateClockCanvas {
     }
 
     // 表盘刻度：分钟
-    drawClockPanelMinutes(ctx, center){
+    drawClockPanelMinutes(ctx, center, tzTime){
         const lineHeight = this.configClock.lengthSplitMinute
         const offsetCenter = this.configClock.panelRadius
-        const seconds = new Date().getSeconds()
-        const ms = new Date().getMilliseconds()
 
+        const seconds = tzTime.getSeconds()
+        const ms = tzTime.getMilliseconds()
         ctx.save()
         ctx.translate(center.x, center.y)
         ctx.fillStyle = THEME[this.theme].colorScaleSecond
@@ -391,10 +438,10 @@ class AnimateClockCanvas {
     }
 
     // 时针
-    drawPointerHour(ctx, center){
-        const seconds = new Date().getSeconds()
-        const minutes = new Date().getMinutes()
-        const hours = new Date().getHours()
+    drawPointerHour(ctx, center, tzTime){
+        const seconds = tzTime.getSeconds()
+        const minutes = tzTime.getMinutes()
+        const hours = tzTime.getHours()
         const rotateAngle = Math.PI * 2 * (hours / 12) + Math.PI +  Math.PI / 6 * ((minutes + seconds/60) / 60) // 秒 + 毫秒的角度
         this.rotateAngleHour = rotateAngle
         const lineWidth = this.configClock.widthHourPointer
@@ -457,10 +504,10 @@ class AnimateClockCanvas {
     }
 
     // 分针
-    drawPointerMinute(ctx, center){
-        const ms = new Date().getMilliseconds()
-        const seconds = new Date().getSeconds()
-        const minutes = new Date().getMinutes()
+    drawPointerMinute(ctx, center, tzTime){
+        const ms = tzTime.getMilliseconds()
+        const seconds = tzTime.getSeconds()
+        const minutes = tzTime.getMinutes()
         const rotateAngle = Math.PI * 2 * (minutes / 60) + Math.PI   + Math.PI / 30 * ( ms / 1000 / 60 + seconds / 60)     // 秒 + 毫秒的角度
         this.rotateAngleMinute = rotateAngle
         const lineWidth = this.configClock.widthMinutePointer
@@ -526,9 +573,9 @@ class AnimateClockCanvas {
     }
 
     // 秒针
-    drawPointerSecond(ctx, center){
-        const ms = new Date().getMilliseconds()
-        const seconds = new Date().getSeconds()
+    drawPointerSecond(ctx, center, tzTime){
+        const ms = tzTime.getMilliseconds()
+        const seconds = tzTime.getSeconds()
         const rotateAngle = Math.PI * 2 * (ms / 1000 / 60 + seconds / 60)  + Math.PI  // 秒 + 毫秒的角度
         this.rotateAngleSecond = rotateAngle
         const lineWidth = this.configClock.widthSecondPointer
